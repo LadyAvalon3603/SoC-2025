@@ -34,8 +34,8 @@ def parse_args(argv=None, *, output_mode=None):
         type=int,
         default=settings.DEFAULT_MAX_DETECTIONS,
         help=(
-            "Maximum full-resolution instances retained from 100 queries. "
-            "The production dataset contains at most three documents."
+            "Maximum confidence-ranked masks restored before selecting the "
+            "single candidate with the largest visible area."
         ),
     )
     parser.add_argument(

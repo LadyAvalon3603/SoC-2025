@@ -38,6 +38,18 @@ def output_file(directory: Path, key: Path, suffix: str) -> Path:
     return path
 
 
+def remove_previous_instance_artifacts(
+    directory: Path, key: Path, extension: str
+) -> None:
+    """Remove stale outputs for this image before writing its sole instance."""
+    parent = directory / key.parent
+    if not parent.is_dir():
+        return
+    for path in parent.glob(f"{key.name}_instance_*{extension}"):
+        if path.is_file():
+            path.unlink()
+
+
 def write_image(path: Path, image: np.ndarray) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     if not cv2.imwrite(str(path), image):

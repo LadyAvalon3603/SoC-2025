@@ -8,10 +8,21 @@ import time
 import torch
 from .config import load_config
 from .geometry import mask_bbox
-from .io import input_images, output_file, output_key, write_image
+from .io import (
+    input_images,
+    output_file,
+    output_key,
+    remove_previous_instance_artifacts,
+    write_image,
+)
 from .preprocessing import DocLetterboxDatasetMapper
 from .refinement import refine_instance_with_roi, should_drop_unconfirmed_low_score
-from .runtime import filter_and_sort_instances, load_model, synchronize_cuda
+from .runtime import (
+    filter_and_sort_instances,
+    load_model,
+    select_largest_visible_instance,
+    synchronize_cuda,
+)
 from .settings import DEFAULT_COARSE_PIXEL_REFERENCE_SIZE
 from .visualization import COLORS, render_mask
 
@@ -35,6 +46,7 @@ def run(args) -> None:
     print(f"  checkpoint: {checkpoint_path}")
     print(f"  score threshold: {args.score_threshold}")
     print(f"  max detections: {args.max_detections}")
+    print("  final selection: largest visible mask (one document)")
     print(f"  AMP/FP16: {use_amp}")
     print(f"  ROI refinement: {args.roi_refine}")
     print(f"  output mode: {args.output_mode}")
@@ -92,9 +104,7 @@ def run(args) -> None:
         random_flip=False,
     )
     output_names = (
-        ("roi_debug", "overlays")
-        if args.output_mode == "debug"
-        else ("instances",)
+        ("roi_debug", "overlays") if args.output_mode == "debug" else ("instances",)
     )
     directories = {name: output_dir / name for name in output_names}
     for directory in directories.values():
@@ -143,10 +153,16 @@ def run(args) -> None:
         synchronize_cuda()
         stage1_seconds.append(time.perf_counter() - stage1_start)
         instances = filter_and_sort_instances(instances, args.score_threshold)
+        candidate_count = len(instances)
+        instances = select_largest_visible_instance(instances)
         refined_overlay = image_bgr.copy() if args.output_mode != "production" else None
         kept_count = 0
         dropped_count = 0
         key = output_key(image_path, input_path)
+        if "instances" in directories:
+            remove_previous_instance_artifacts(directories["instances"], key, ".png")
+        if "roi_debug" in directories:
+            remove_previous_instance_artifacts(directories["roi_debug"], key, ".jpg")
         accepted_refinements = 0
         attempted_refinements = 0
         for zero_index, (mask_tensor, box_tensor, score_tensor) in enumerate(
@@ -283,7 +299,8 @@ def run(args) -> None:
         total_accepted_refinements += accepted_refinements
         print(
             f"[{image_index}/{len(image_paths)}] {image_path.name}: "
-            f"{kept_count} document instance(s), "
+            f"selected largest from {candidate_count} candidate(s), "
+            f"kept {kept_count}, "
             f"dropped {dropped_count}, "
             f"ROI accepted {accepted_refinements}/{attempted_refinements}"
         )

@@ -16,13 +16,17 @@ from instance_seg.cli import parse_args
 from instance_seg.geometry import touches_internal_crop_edge
 from instance_seg.io import input_images
 from instance_seg.refinement import should_drop_unconfirmed_low_score
+from instance_seg.runtime import select_largest_visible_instance
 from instance_seg.settings import DEFAULT_INPUT, PACKAGE_ROOT
 
 
 def test_cli_is_independent_of_cwd_and_model_imports(tmp_path):
     assert parse_args([]).input == DEFAULT_INPUT
     assert parse_args([], output_mode="production").output_mode == "production"
-    assert parse_args(["--output-mode", "debug"], output_mode="production").output_mode == "debug"
+    assert (
+        parse_args(["--output-mode", "debug"], output_mode="production").output_mode
+        == "debug"
+    )
     assert DEFAULT_INPUT == PACKAGE_ROOT.parent / "TEST_dewarp"
     code = (
         "import sys; sys.path.insert(0, sys.argv[1]); "
@@ -30,7 +34,9 @@ def test_cli_is_independent_of_cwd_and_model_imports(tmp_path):
         'assert "torch" not in sys.modules; '
         'assert "detectron2" not in sys.modules'
     )
-    subprocess.run([sys.executable, "-c", code, str(PACKAGE_ROOT)], check=True, cwd=tmp_path)
+    subprocess.run(
+        [sys.executable, "-c", code, str(PACKAGE_ROOT)], check=True, cwd=tmp_path
+    )
 
 
 def test_invalid_arguments_fail_before_model_loading(args):
@@ -68,9 +74,28 @@ def test_low_score_removal_requires_a_contradicting_roi_candidate():
     assert not should_drop_unconfirmed_low_score(0.3, diagnostic, 0.5, 0.2)
 
 
-def test_batch_outputs_keep_nested_names_masks_and_overlays(
-    tmp_path, mode
-):
+def test_largest_visible_instance_wins_over_higher_confidence():
+    instances = Instances((20, 30))
+    masks = torch.zeros((3, 20, 30), dtype=torch.bool)
+    masks[0, 1:5, 1:5] = True
+    masks[1, 2:18, 3:27] = True
+    masks[2, 5:15, 5:15] = True
+    instances.pred_masks = masks
+    instances.pred_boxes = Boxes(
+        torch.tensor(
+            [[1.0, 1.0, 5.0, 5.0], [3.0, 2.0, 27.0, 18.0], [5.0, 5.0, 15.0, 15.0]]
+        )
+    )
+    instances.scores = torch.tensor([0.99, 0.70, 0.80])
+
+    selected = select_largest_visible_instance(instances)
+
+    assert len(selected) == 1
+    assert int(selected.pred_masks.sum()) == 16 * 24
+    assert torch.isclose(selected.scores[0], torch.tensor(0.70))
+
+
+def test_batch_outputs_keep_nested_names_masks_and_overlays(tmp_path, mode):
     from instance_seg import pipeline
 
     inputs = tmp_path / "input"
@@ -87,11 +112,22 @@ def test_batch_outputs_keep_nested_names_masks_and_overlays(
             record = records[0]
             h, w = record["height"], record["width"]
             instances = Instances((h, w))
-            masks = torch.zeros((1, h, w), dtype=torch.bool)
-            masks[:, 8:24, 12:36] = True
+            masks = torch.zeros((3, h, w), dtype=torch.bool)
+            masks[0, 2:6, 2:6] = True
+            masks[1, 8:24, 12:36] = True
+            masks[2, 10:20, 5:15] = True
             instances.pred_masks = masks
-            instances.pred_boxes = Boxes(torch.tensor([[12.0, 8.0, 36.0, 24.0]]))
-            instances.scores = torch.tensor([0.9])
+            instances.pred_boxes = Boxes(
+                torch.tensor(
+                    [
+                        [2.0, 2.0, 6.0, 6.0],
+                        [12.0, 8.0, 36.0, 24.0],
+                        [5.0, 10.0, 15.0, 20.0],
+                    ]
+                )
+            )
+            # The largest mask deliberately has the lowest confidence.
+            instances.scores = torch.tensor([0.99, 0.70, 0.80])
             return [{"instances": instances}]
 
     def fake_refinement(**kwargs):
@@ -99,6 +135,10 @@ def test_batch_outputs_keep_nested_names_masks_and_overlays(
         return kwargs["coarse_mask"], {"attempted": True, "accepted": True}, debug
 
     output = tmp_path / mode
+    stale_dir = output / ("instances" if mode == "production" else "roi_debug") / "a"
+    stale_dir.mkdir(parents=True)
+    stale_extension = ".png" if mode == "production" else ".jpg"
+    (stale_dir / f"same_instance_002{stale_extension}").touch()
     args = parse_args(
         [
             str(inputs),
@@ -124,6 +164,13 @@ def test_batch_outputs_keep_nested_names_masks_and_overlays(
         assert mask.exists() == (mode != "debug")
         assert overlay.exists() == (mode != "production")
         assert debug.exists() == (mode == "debug")
+        stale = (
+            output
+            / ("instances" if mode == "production" else "roi_debug")
+            / folder
+            / f"same_instance_002{stale_extension}"
+        )
+        assert not stale.exists()
         if mask.exists():
             pixels = cv2.imread(str(mask), cv2.IMREAD_GRAYSCALE)
             assert pixels.shape == (32, 48)
@@ -140,14 +187,20 @@ class DeploymentTests(unittest.TestCase):
             test_cli_is_independent_of_cwd_and_model_imports(Path(folder))
 
     def test_invalid_arguments(self):
-        for args in [["--score-threshold", "nan"], ["--score-threshold", "1.1"],
-                     ["--max-images", "-1"], ["--roi-refine-size", "33"]]:
+        for args in [
+            ["--score-threshold", "nan"],
+            ["--score-threshold", "1.1"],
+            ["--max-images", "-1"],
+            ["--roi-refine-size", "33"],
+        ]:
             with self.subTest(args=args):
                 test_invalid_arguments_fail_before_model_loading(args)
 
     def test_recursive_discovery(self):
         with tempfile.TemporaryDirectory() as folder:
-            test_recursive_discovery_ignores_directories_with_image_extensions(Path(folder))
+            test_recursive_discovery_ignores_directories_with_image_extensions(
+                Path(folder)
+            )
 
     def test_crop_boundaries(self):
         test_roi_edges_distinguish_image_boundary_from_internal_crop()
@@ -155,10 +208,15 @@ class DeploymentTests(unittest.TestCase):
     def test_low_score_gates(self):
         test_low_score_removal_requires_a_contradicting_roi_candidate()
 
+    def test_largest_visible_selection(self):
+        test_largest_visible_instance_wins_over_higher_confidence()
+
     def test_output_modes(self):
         for mode in ["production", "debug"]:
             with self.subTest(mode=mode), tempfile.TemporaryDirectory() as folder:
-                test_batch_outputs_keep_nested_names_masks_and_overlays(Path(folder), mode)
+                test_batch_outputs_keep_nested_names_masks_and_overlays(
+                    Path(folder), mode
+                )
 
 
 if __name__ == "__main__":
