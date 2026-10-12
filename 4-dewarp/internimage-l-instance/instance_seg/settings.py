@@ -11,40 +11,9 @@ DEFAULT_CHECKPOINT = PACKAGE_ROOT / "checkpoints" / "best_hd95_1024.pth"
 DEFAULT_OUTPUT_DIR = PACKAGE_ROOT / "outputs"
 DEFAULT_SCORE_THRESHOLD = 0.50
 DEFAULT_USE_AMP = True
-# Restore enough confidence-filtered candidates to choose the largest visible
-# document even when a scene contains more than the training distribution's
-# usual three documents. Only one candidate proceeds to ROI refinement.
-DEFAULT_MAX_DETECTIONS = 10
-DEFAULT_ROI_REFINE = True
-DEFAULT_ROI_REFINE_SIZE = 896
-# Pixel-distance gates below were calibrated at a 1024 Stage-1 input.  Keep
-# their physical meaning stable when the coarse input size changes.
-DEFAULT_COARSE_PIXEL_REFERENCE_SIZE = 1024
-DEFAULT_ROI_MARGIN = 0.10
-DEFAULT_ROI_RETRY_MARGIN = 0.20
-DEFAULT_ROI_CANDIDATE_SCORE_THRESHOLD = 0.10
-DEFAULT_ROI_MIN_MATCH_IOU = 0.45
-DEFAULT_ROI_MIN_AREA_RATIO = 0.55
-DEFAULT_ROI_MAX_AREA_RATIO = 1.45
-DEFAULT_ROI_MIN_USEFUL_RESOLUTION_GAIN = 1.15
-DEFAULT_ROI_LOW_GAIN_MAX_EXPANSION = 1.10
-DEFAULT_ROI_LOCAL_COMPONENT_MAX_RATIO = 0.005
-DEFAULT_ROI_LOCAL_COMPONENT_MAX_P95_SHIFT = 5.0
-DEFAULT_ROI_LOCAL_COARSE_EDGE_ADVANTAGE = 1.5
-DEFAULT_ROI_CONTOUR_COMPONENT_MAX_RATIO = 0.008
-DEFAULT_ROI_CONTOUR_MIN_P95_SHIFT = 12.0
-DEFAULT_ROI_CONTOUR_MIN_LENGTH_RATIO = 1.05
-DEFAULT_ROI_CONTOUR_MIN_EDGE_CONTINUITY_GAP = 0.20
-DEFAULT_ROI_CONTOUR_COARSE_EDGE_ADVANTAGE = 1.40
-DEFAULT_ROI_CONTOUR_EDGE_MAGNITUDE = 20.0
-DEFAULT_ROI_LONG_EDGE_COMPONENT_MAX_RATIO = 0.020
-DEFAULT_ROI_LONG_EDGE_MIN_P95_SHIFT = 8.0
-DEFAULT_ROI_LONG_EDGE_MIN_ELONGATION = 5.0
-DEFAULT_ROI_LONG_EDGE_COARSE_EDGE_ADVANTAGE = 2.5
-DEFAULT_ROI_LONG_EDGE_MIN_COARSE_CONTINUITY = 0.95
-# The full-image pass may retain several candidates, but only the largest
-# visible mask is selected. Therefore at most one ROI needs refinement.
-DEFAULT_ROI_MAX_INSTANCES = 1
-DEFAULT_LOW_SCORE_VERIFY_THRESHOLD = 0.50
-DEFAULT_LOW_SCORE_MAX_MISMATCH_IOU = 0.20
+# Restore at most five confidence-ranked instance masks.  A mask must contain
+# more than 100 foreground pixels after retaining its largest connected region
+# at original-image resolution; only the largest surviving instance is written.
+DEFAULT_MAX_DETECTIONS = 5
+DEFAULT_MIN_MASK_AREA = 100
 DEFAULT_OUTPUT_MODE = "debug"

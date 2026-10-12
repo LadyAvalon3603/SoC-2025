@@ -1,43 +1,53 @@
 # 环境、权重与部署
 
-默认权重为 `checkpoints/best_hd95_1024.pth`，完整复制自原始 1024 训练的
-`Instance/Train_InternImage-L-Instance/doc_instance_seg/checkpoints/best_hd95.pth`。
-原始训练配置与结果位于该训练工程的 `outputs/train/`，保存的 `INPUT.IMAGE_SIZE` 为 1024。
-选模指标为单实例验证集 P95 HD95=31.773448，checkpoint iteration=19794。
-来源与文件校验值见 `../checkpoints/model_1024.json`。
+默认权重为 `checkpoints/best_hd95_1024.pth`，复制自：
 
-保留 `criterion.empty_weight` 这一兼容缓冲区以直接加载既有 checkpoint，
-部署模型不包含损失计算与训练分支。
+```text
+Instance/Train_InternImage-L-Instance/doc_instance_seg/outputs/train_runs/
+internimage_l_maskdino_1024_20260820_174342/checkpoints/best_hd95.pth
+```
+
+该权重训练时使用固定 `1024×1024` Letterbox。当前部署只进行一次模型前向，
+预处理统一为固定方形 Letterbox，尺寸只读取 YAML 中的 `INPUT.IMAGE_SIZE`，使用
+Pillow Lanczos 等比例缩放并以灰色居中填充。工程已删除动态矩形档位、ROI 裁剪
+重推、二阶段候选验收和边界融合代码。权重来源、选模指标和校验值见
+`../checkpoints/model_1024.json`。
+
+配置中的 `MODEL.MaskDINO.TWO_STAGE: true` 属于 MaskDINO 内部解码器架构，
+不是部署流水线中的第二次推理。为严格加载现有 checkpoint，该模型结构保持不变。
+
+部署保留 `criterion.empty_weight` 兼容缓冲区以加载既有 checkpoint；模型不包含
+训练损失执行路径。
 
 已用环境基线为 Python 3.9.23、PyTorch 1.11.0、torchvision 0.12.0、CUDA 11.3、
 Detectron2 0.6、MMCV 1.5.0、MMSegmentation 0.27.0、Pillow 9.5.0。
-Detectron2 是安装到 Python 环境的依赖；复制本部署目录到其他机器时需另行安装。
-安装 Python 依赖后，DCNv3 和 MultiScaleDeformableAttention 需按目标环境编译：
+安装 Python 依赖后，需要针对目标环境编译 DCNv3 和
+MultiScaleDeformableAttention：
 
 ```bash
 python -m pip install ./instance_seg/models/ops_dcnv3 --no-build-isolation
 python -m pip install ./instance_seg/models/maskdino/modeling/pixel_decoder/ops --no-build-isolation
 ```
 
-本机现有环境已安装两个扩展。若复用 CUDA 11.3 在 RTX 4090 上构建，原工程使用
-GCC/G++ 9、`TORCH_CUDA_ARCH_LIST="8.6+PTX"`，nvcc 加
-`-U__SIZEOF_INT128__`；其他平台应匹配各自的 PyTorch/CUDA 编译环境。
-
 ## 输出控制
 
-`infer.py` 顶部的 `OUTPUT_MODE` 可设置为 `debug` 或 `production`。
-`debug` 保存叠加可视化和 ROI 诊断；`production` 只生成原图分辨率的
-单通道 uint8 PNG，像素取值为 0 和 255。命令行同名参数可覆盖 IDE 设置。
+`infer.py` 顶部的 `OUTPUT_MODE` 可设为 `debug` 或 `production`：
+
+- `debug`：仅保存最终 mask 叠加图；
+- `production`：仅保存原图分辨率单通道 uint8 PNG，像素值为 0 和 255。
+
+命令行 `--output-mode` 可以覆盖 IDE 默认设置。
 
 ## 单文档选择规则
 
-第一阶段最多恢复 10 个通过置信度阈值的候选。程序在原图分辨率下计算每个预测
-mask 的前景像素数，只保留可见面积最大的一个候选，再执行一次 ROI 精修。
-最终最多输出一个文档。面积相同时沿用置信度降序，保证选择结果稳定。
+一次整图推理最多恢复 5 个置信度排序候选。候选回到原图坐标后，每个 mask
+只保留面积最大的 8 连通域，且该连通域面积必须严格大于 100 个原图像素。
+最后只输出合格候选中可见面积最大的一个实例；仅当面积完全相同时，原有置信度
+顺序才起到确定性仲裁作用。
 
-## 1024 恢复验证（2026-09-14）
+## 固定输入约束
 
-6 项部署回归检查通过，覆盖 debug/production 及 IDE 默认值的命令行覆盖。
-RTX 4090 使用原始 1024 权重处理 `perspective_08.jpg`，全图/ROI 输入均为 1024，
-严格加载通过，ROI 接受 1/1。production 仅生成 4208×3120 单通道 uint8 PNG，
-像素值为 0 和 255，未生成叠加图或 ROI 对比图。
+部署输入尺寸只有一个权威来源：`configs/internimage_l_maskdino.yaml` 中的
+`INPUT.IMAGE_SIZE`。该值必须为 32 的正整数倍。横图、竖图和方图都进入由它定义的
+同一个方形画布：原图宽高比保持不变，剩余区域对称填充。命令行不提供动态矩形
+或 ROI 二阶段开关。

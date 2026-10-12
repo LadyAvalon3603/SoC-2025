@@ -5,8 +5,8 @@
 ```text
 4-dewarp/
 ├── TEST_dewarp/                        # 所有推理入口的默认测试图片
-├── Cloud-side/                         # Python DeepLabV3+ 语义分割
-├── Device-side/                        # C++/NCNN 端侧书本分割与中缝点
+├── Lightweight-Segmentation-Only-Inference/ # 轻量级单分割推理
+├── Joint-Segmentation-Keypoint-Detection-Inference/ # 分割与关键点检测联合推理
 ├── internimage-l-semantic-segmentation/ # InternImage-L + UPerHead 语义分割
 └── internimage-l-instance/              # InternImage-L + MaskDINO 实例分割
 ```
@@ -17,8 +17,10 @@
 ## InternImage-L 实例分割
 
 `internimage-l-instance/` 包含部署推理、模型、独立配置和默认权重。
-默认加载原始 1024 训练权重，进行 1024 全图定位及 1024 原图 ROI 精修。
-在 `infer.py` 设置 `OUTPUT_MODE`：`debug` 输出叠加图与 ROI 对比，
+默认加载原始 1024 训练权重，以 YAML 中 `INPUT.IMAGE_SIZE` 配置的固定方形
+Letterbox 进行单次整图推理；
+不使用动态矩形档位，也不执行 ROI 二次推理。
+在 `infer.py` 设置 `OUTPUT_MODE`：`debug` 输出叠加图，
 `production` 只输出 `instances/` 中的 0/255 mask。使用 `doc_instance_seg` Conda 环境，在包内运行 `python infer.py`；
 待处理图片统一放在 `4-dewarp/TEST_dewarp/`。具体参数与依赖见包内 README。
 该包使用 PyTorch/CUDA，需要 NVIDIA GPU。
@@ -33,13 +35,15 @@
 `checkpoints/best_final_before.pth`。输出包括 mask 和叠加可视化。
 训练工程位于 `../Semantic-Segmentation/Train_InternImage-L/`。
 
-## DeepLab 与 NCNN
+## 轻量级单分割与分割-关键点联合推理
 
-`Cloud-side/` 用于云端 DeepLabV3+ 文档语义分割，可输出 mask、edge 和混合图，
-入口为 `predict.py`。训练工程位于 `../Semantic-Segmentation/Cloud_side_train/`。
+`Lightweight-Segmentation-Only-Inference/` 使用轻量级 DeepLabV3+，只执行文档语义分割，
+可输出 mask、edge 和混合图，入口为 `predict.py`。训练工程位于
+`../Semantic-Segmentation/Lightweight-Segmentation-Only-Training/`。
 
-`Device-side/` 用于 C++/NCNN 端侧书本分割与中缝点预测，入口为 `run.sh`。
-训练和验证工程位于 `../Semantic-Segmentation/Device_side_test/`。
+`Joint-Segmentation-Keypoint-Detection-Inference/` 使用 C++/NCNN 联合执行书本分割与中缝关键点预测，
+入口为 `run.sh`。训练和验证工程位于
+`../Semantic-Segmentation/Joint-Segmentation-Keypoint-Detection-Training/`。
 两套工程的运行方法详见各自 README。
 
 所有批量推理入口默认递归读取 `TEST_dewarp/` 的图片，并在各自输出目录保留输入子目录结构。

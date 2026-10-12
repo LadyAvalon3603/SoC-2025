@@ -1,7 +1,9 @@
 # InternImage-L 实例分割推理
 
-InternImage-L + MaskDINO 文档实例分割部署包，包含全图定位、原图 ROI 精修、
-逐实例 mask 和叠加可视化。运行需要 PyTorch/CUDA 与兼容的 NVIDIA GPU。
+InternImage-L + MaskDINO 文档实例分割部署包。当前部署只执行一次整图推理：
+所有图片保持宽高比缩放并居中填充到固定方形 Letterbox 画布。画布尺寸只由
+`configs/internimage_l_maskdino.yaml` 的 `INPUT.IMAGE_SIZE` 定义，不再使用动态
+矩形档位，也不再执行 ROI 二次推理。
 
 ## 运行
 
@@ -11,8 +13,8 @@ cd 4-dewarp/internimage-l-instance
 python infer.py
 ```
 
-可在 IDE 中直接运行 `infer.py`。默认递归读取 `4-dewarp/TEST_dewarp/`，
-加载 `checkpoints/best_hd95_1024.pth`，输出到本包 `outputs/`；默认路径不依赖工作目录。
+可在 IDE 中直接运行 `infer.py`。默认递归读取 `4-dewarp/TEST_dewarp/`，加载
+`checkpoints/best_hd95_1024.pth`，输出到本包 `outputs/`；默认路径不依赖工作目录。
 
 ```bash
 python infer.py --help
@@ -20,62 +22,58 @@ python infer.py --max-images 1
 python infer.py ../TEST_dewarp/instance --output-dir outputs_instance
 python infer.py /path/to/image.jpg --output-mode production
 python infer.py --output-mode debug
-python infer.py --no-roi-refine
 ```
 
-默认采用 1024 全图输入、896 ROI 精修和 0.50 置信度阈值。第一阶段最多恢复
-10 个候选，在原图坐标中按 mask 前景像素数比较可见面积，只保留面积最大的文档，
-然后仅对这一份文档执行一次 ROI 精修并输出。置信度只负责过滤弱候选，不决定
-最终选择；面积完全相同时，由置信度较高者胜出。
-提高候选上限只增加候选 mask 恢复和面积统计开销；第二阶段仍最多推理一次。
-重复使用同一输出目录时，程序会先清除该图片遗留的 `_instance_002` 等旧结果，
-保证目录中不会混入此前运行产生的其他实例。
-在 `infer.py` 顶部直接修改输出模式，IDE 点击运行即生效：
+权重来自固定 `1024×1024` Letterbox 训练；当前部署输入尺寸读取 YAML 的
+`INPUT.IMAGE_SIZE`，插值使用 Pillow Lanczos。该推理尺寸变化不会改变权重本身。
+
+置信度阈值默认 0.50，最多恢复 5 个候选实例。mask 恢复到原图后，每个候选
+只保留面积最大的 8 连通域；该区域的原图前景面积必须严格大于 100 像素。
+程序最终只输出合格候选中可见面积最大的一个实例。重复使用同一输出目录时，
+会先清除该图片遗留的 `_instance_002` 等旧 mask。
+
+在 `infer.py` 顶部可设置 IDE 默认输出模式：
 
 ```python
-OUTPUT_MODE = "debug"       # 叠加可视化 + ROI 边界对比图
-# OUTPUT_MODE = "production"  # 只保存逐实例 0/255 单通道 PNG mask
+OUTPUT_MODE = "debug"         # 保存最终 mask 叠加图
+# OUTPUT_MODE = "production"  # 保存原图尺寸 0/255 单通道 PNG mask
 ```
 
-命令行 `--output-mode` 优先于该开关。例如 `python infer.py --output-mode production`。
-常用参数与 ROI 门限集中在 `instance_seg/settings.py`，命令行参数优先。
-模型结构配置位于 `configs/internimage_l_maskdino.yaml`。
-`--help` 和参数校验仅依赖 Python 标准库，不加载 PyTorch 或 CUDA。
+命令行 `--output-mode` 优先于该变量。常用阈值集中在
+`instance_seg/settings.py`，模型结构配置位于
+`configs/internimage_l_maskdino.yaml`。
 
 ## 输出
 
 ```text
 outputs/
-├── instances/  # <图名>_instance_001.png，原图尺寸，0/255 mask
-├── overlays/   # <图名>.jpg，彩色 mask、轮廓、编号与置信度叠加
-└── roi_debug/  # ROI 粗/细边界对比，仅 debug 模式
+├── instances/  # production：<图名>_instance_001.png
+└── overlays/   # debug：<图名>.jpg
 ```
 
-| 模式 | 独立 mask | 叠加图 | ROI 对比图 |
-| --- | --- | --- | --- |
-| `production` | 是 | 否 | 否 |
-| `debug`（默认） | 否 | 是 | 是 |
+| 模式 | 独立 mask | 叠加图 |
+| --- | --- | --- |
+| `production` | 是 | 否 |
+| `debug` | 否 | 是 |
 
-保留输入子目录结构。第一阶段与 ROI 阶段共用一套权重。
+输出保留输入目录的相对子目录结构。
 
 ## 目录
 
 ```text
 internimage-l-instance/
 ├── infer.py                  # 启动入口
-├── configs/                  # 模型结构配置
-├── checkpoints/              # 部署权重
+├── configs/                  # 模型结构与唯一的部署输入尺寸配置
+├── checkpoints/              # 部署权重及来源记录
 ├── instance_seg/
 │   ├── settings.py           # 路径与推理默认参数
 │   ├── cli.py                # 命令行参数及校验
-│   ├── pipeline.py           # 批量推理、结果保存、耗时统计
-│   ├── runtime.py            # 严格加载权重、置信度排序、CUDA 计时
+│   ├── pipeline.py           # 单次推理、输出和耗时统计
+│   ├── runtime.py            # 权重加载、候选过滤和 CUDA 计时
 │   ├── config.py             # Detectron2 配置加载
-│   ├── preprocessing.py      # 全图与 ROI 预处理
-│   ├── refinement.py         # ROI 二次推理及候选验收
-│   ├── geometry.py           # 几何、匹配和边界计算
-│   ├── fusion.py             # 局部边界融合与回退
-│   ├── visualization.py      # 叠加图和 ROI 对比图
+│   ├── preprocessing.py      # 固定方形 Letterbox 预处理
+│   ├── geometry.py           # mask 外接框计算
+│   ├── visualization.py      # 最终 mask 叠加图
 │   ├── io.py                 # 递归读图和文件输出
 │   └── models/               # InternImage、MaskDINO、CUDA 算子
 ├── tests/                    # 部署行为回归检查
@@ -84,32 +82,33 @@ internimage-l-instance/
 └── requirements.txt
 ```
 
-训练工程位于 `../../Instance/Train_InternImage-L-Instance/`。
-部署模块使用独立包名 `instance_seg`，与训练侧的 `doc_instance_seg` 区分。
+配置中的 `MODEL.MaskDINO.TWO_STAGE: true` 是 MaskDINO 模型内部的解码器结构，
+是现有 checkpoint 的组成部分；它不表示“整图一次、ROI 再推一次”，不能作为
+业务二阶段开关删除。
+
+训练工程位于 `../../Instance/Train_InternImage-L-Instance/`。部署模块使用独立
+包名 `instance_seg`，与训练侧 `doc_instance_seg` 区分。
 
 ## 验证
-
-在本目录、已安装推理依赖的环境中运行，无需 GPU 权重加载或额外测试框架：
 
 ```bash
 python -m unittest discover -s tests -v
 ```
 
-覆盖默认路径、轻量参数解析、非法参数、递归文件筛选、最大可见面积选择、
-ROI 边界判断、低置信度过滤以及两种输出模式。真实模型冒烟验证可运行
-`python infer.py --max-images 1`。
+回归检查覆盖 YAML 配置尺寸的固定方形 Letterbox、默认路径、轻量参数解析、已删除 ROI 参数、
+递归文件筛选、候选连通域/面积过滤、最终最大面积选择和两种输出模式。真实模型
+冒烟验证可运行 `python infer.py --max-images 1`。
 
-## 原始 1024 训练结果
+## 权重来源
 
-部署默认加载真正由 1024×1024 输入训练得到的 `best_hd95_1024.pth`。
-来源、选模指标和 SHA-256 记录在 `checkpoints/model_1024.json`。
-完整原始训练结果仍位于：
+`best_hd95_1024.pth` 由固定 `1024×1024` Letterbox 输入训练得到。来源、选模
+指标和 SHA-256 记录在 `checkpoints/model_1024.json`。完整训练结果位于：
 
 ```text
 Instance/Train_InternImage-L-Instance/doc_instance_seg/
-├── outputs/train/        # 原始 1024 配置、日志、metrics、最终训练断点
-└── checkpoints/          # best_hd95、best_mask_ap、best_boundary 等原始权重
+└── outputs/train_runs/internimage_l_maskdino_1024_20260820_174342/
 ```
 
-该训练完成 296,910 次迭代，默认 best_hd95 在第 19,794 次迭代选出，
-单实例验证 P95 HD95 为 31.773448。训练默认配置也已恢复为 1024×1024。
+该训练完成 296,910 次迭代，默认 `best_hd95` 在第 19,794 次迭代选出，单实例
+验证 `dataset_p95_hd95` 为 31.773448。该指标属于训练时统一 1024 Letterbox
+评估口径，不应直接解释成当前部署尺寸推理结果的像素误差。

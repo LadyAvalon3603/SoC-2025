@@ -1,6 +1,8 @@
 """Model loading, detection filtering and CUDA timing."""
 
 from pathlib import Path
+import cv2
+import numpy as np
 from detectron2.modeling import build_model
 import torch
 
@@ -11,6 +13,39 @@ def filter_and_sort_instances(instances, score_threshold: float):
     instances = instances[keep]
     order = torch.argsort(instances.scores, descending=True)
     return instances[order]
+
+
+def keep_largest_mask_component(instances):
+    """Keep only the largest 8-connected foreground region in every mask."""
+    if len(instances) == 0:
+        return instances
+
+    source_masks = instances.pred_masks
+    cleaned_masks = []
+    for mask_tensor in source_masks:
+        mask = mask_tensor.detach().to("cpu").numpy().astype(np.uint8, copy=False)
+        component_count, labels, stats, _ = cv2.connectedComponentsWithStats(
+            mask, connectivity=8
+        )
+        if component_count <= 1:
+            cleaned_masks.append(np.zeros_like(mask, dtype=bool))
+            continue
+        foreground_areas = stats[1:, cv2.CC_STAT_AREA]
+        largest_label = int(np.argmax(foreground_areas)) + 1
+        cleaned_masks.append(labels == largest_label)
+
+    instances.pred_masks = torch.from_numpy(np.stack(cleaned_masks)).to(
+        source_masks.device
+    )
+    return instances
+
+
+def filter_instances_by_mask_area(instances, minimum_area: int):
+    """Keep instance masks strictly larger than an original-pixel threshold."""
+    if len(instances) == 0:
+        return instances
+    areas = instances.pred_masks.flatten(1).sum(dim=1)
+    return instances[areas > int(minimum_area)]
 
 
 def select_largest_visible_instance(instances):

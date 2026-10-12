@@ -41,6 +41,8 @@ def _validated_letterbox_meta(
     resized_width = int(meta["resized_width"])
     top = int(meta["top"])
     left = int(meta["left"])
+    meta_canvas_height = int(meta.get("canvas_height", letterbox_height))
+    meta_canvas_width = int(meta.get("canvas_width", letterbox_width))
     values = (
         letterbox_height, letterbox_width, original_height, original_width,
         resized_height, resized_width,
@@ -49,6 +51,15 @@ def _validated_letterbox_meta(
         raise ValueError(f"Invalid letterbox dimensions: {values}")
     if top < 0 or left < 0:
         raise ValueError(f"Invalid letterbox offsets: top={top}, left={left}")
+    if (meta_canvas_height, meta_canvas_width) != (
+        letterbox_height,
+        letterbox_width,
+    ):
+        raise ValueError(
+            "Resize metadata canvas does not match model input: "
+            f"meta={(meta_canvas_width, meta_canvas_height)}, "
+            f"input={(letterbox_width, letterbox_height)}"
+        )
     if top + resized_height > letterbox_height or left + resized_width > letterbox_width:
         raise ValueError(
             "Letterbox content exceeds its canvas: "

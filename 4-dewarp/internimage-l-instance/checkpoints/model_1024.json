@@ -1,13 +1,14 @@
 {
-  "input_size": [
+  "training_input_size": [
     1024,
     1024
   ],
+  "deployment_preprocessing": "fixed_square_letterbox_pillow_lanczos",
   "checkpoint": "best_hd95_1024.pth",
   "sha256": "bf41b9d961226828f612752563b7869921c7a94aa5f6b30cb6b8cc04c83c3c80",
-  "source_checkpoint": "Instance/Train_InternImage-L-Instance/doc_instance_seg/checkpoints/best_hd95.pth",
-  "training_results": "Instance/Train_InternImage-L-Instance/doc_instance_seg/outputs/train",
-  "training_config": "Instance/Train_InternImage-L-Instance/doc_instance_seg/outputs/train/config.yaml",
+  "source_checkpoint": "Instance/Train_InternImage-L-Instance/doc_instance_seg/outputs/train_runs/internimage_l_maskdino_1024_20260820_174342/checkpoints/best_hd95.pth",
+  "training_results": "Instance/Train_InternImage-L-Instance/doc_instance_seg/outputs/train_runs/internimage_l_maskdino_1024_20260820_174342",
+  "training_config": "Instance/Train_InternImage-L-Instance/doc_instance_seg/outputs/train_runs/internimage_l_maskdino_1024_20260820_174342/config.yaml",
   "completed_iterations": 296910,
   "selection": {
     "value": 31.773448278455543,

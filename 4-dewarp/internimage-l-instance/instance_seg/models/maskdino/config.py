@@ -112,7 +112,10 @@ def add_maskdino_config(cfg):
     cfg.MODEL.MaskDINO.TRANSFORMER_DECODER_NAME = "MaskDINODecoder"
 
     # LSJ aug
-    cfg.INPUT.IMAGE_SIZE = 1024
+    # Schema placeholder only.  The deployment YAML is the sole source of
+    # truth and must provide a positive, stride-aligned value.
+    cfg.INPUT.IMAGE_SIZE = None
+    cfg.INPUT.SIZE_DIVISIBILITY = 32
     cfg.INPUT.MIN_SCALE = 0.1
     cfg.INPUT.MAX_SCALE = 2.0
 

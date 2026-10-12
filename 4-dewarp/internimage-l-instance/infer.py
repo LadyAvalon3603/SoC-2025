@@ -5,9 +5,9 @@ from instance_seg.cli import parse_args
 
 
 # IDE output switch:
-# "debug": overlay visualizations and ROI boundary diagnostics.
+# "debug": final mask overlay visualizations.
 # "production": original-size per-instance uint8 PNG masks, values 0 and 255 only.
-OUTPUT_MODE = "debug"
+OUTPUT_MODE = "production"
 
 
 def main(argv=None):
