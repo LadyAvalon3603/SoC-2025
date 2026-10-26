@@ -1,0 +1,2 @@
+4f7a6e4c468e66f1b2784b69c02bd121064e6b67c0d5861467d64ee0636a119c  models/seam_pose_1024_best.pt
+54aca76a87a9c9dca17618227cdc5ec58d3d52cff4ada6cef30626fdec1e7173  models/seam_pose_512_best.pt
